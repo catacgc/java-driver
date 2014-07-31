@@ -475,8 +475,8 @@ class RequestHandler implements Connection.ResponseCallback {
     public void onTimeout(Connection connection, long latency) {
         Host queriedHost = current;
         try {
-            if (connection instanceof PooledConnection)
-                ((PooledConnection)connection).release();
+	        logger.debug("Timeout hit with connection {}", connection);
+            ((PooledConnection) connection).release();
 
             logError(connection.address, new DriverException("Timeout during read"));
             retry(false, null);

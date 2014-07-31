@@ -16,13 +16,22 @@
 package com.datastax.driver.stress;
 
 import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.ResultSetFuture;
+import com.google.common.base.Optional;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.exceptions.DriverException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BlockingConsumer implements Consumer {
+
+	private static final Logger logger = LoggerFactory.getLogger(Runner.class);
 
     private final Runner runner = new Runner();
 
@@ -51,6 +60,8 @@ public class BlockingConsumer implements Consumer {
 
     private class Runner extends Thread {
 
+
+
         public Runner() {
             super("Consumer Threads");
         }
@@ -60,14 +71,21 @@ public class BlockingConsumer implements Consumer {
                 while (requests.hasNext())
                     handle(requests.next());
             } catch (DriverException e) {
-                System.err.println("Error during query: " + e.getMessage());
+	            logger.debug("Error during query: " + e.getMessage());
             }
         }
 
         protected void handle(QueryGenerator.Request request) {
             Reporter.Context ctx = reporter.newRequest();
             try {
-                request.execute(session);
+	            ResultSetFuture future = request.executeAsync(session);
+	            try {
+				    future.getUninterruptibly(Long.parseLong(System.getProperty("timeout", "20")), TimeUnit.MILLISECONDS);
+	            } catch (TimeoutException e) {
+		            logger.debug("Error during query: " + e.getMessage());
+		            future.cancel(true);
+	            }
+
             } finally {
                 ctx.done();
             }

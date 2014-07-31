@@ -394,7 +394,7 @@ class Connection {
 
     @Override
     public String toString() {
-        return String.format("Connection[%s, inFlight=%d, closed=%b]", name, inFlight.get(), isClosed());
+        return String.format("Connection[%s, inFlight=%d, closed=%b, available_streams=%d]", name, inFlight.get(), isClosed(), maxAvailableStreams());
     }
 
     public static class Factory {

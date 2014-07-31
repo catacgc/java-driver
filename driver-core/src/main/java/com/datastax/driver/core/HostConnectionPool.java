@@ -116,6 +116,8 @@ class HostConnectionPool {
             return c;
         }
 
+	    dumpConnections();
+
         int minInFlight = Integer.MAX_VALUE;
         PooledConnection leastBusy = null;
         for (PooledConnection connection : connections) {
@@ -126,8 +128,10 @@ class HostConnectionPool {
             }
         }
 
-        if (minInFlight >= options().getMaxSimultaneousRequestsPerConnectionThreshold(hostDistance) && connections.size() < options().getMaxConnectionsPerHost(hostDistance))
-            maybeSpawnNewConnection();
+        if (minInFlight >= options().getMaxSimultaneousRequestsPerConnectionThreshold(hostDistance) && connections.size() < options().getMaxConnectionsPerHost(hostDistance)) {
+	        logger.debug("Maybe spawn new on {}: minInFlight={} > {}", host, minInFlight, options().getMaxSimultaneousRequestsPerConnectionThreshold(hostDistance));
+	        maybeSpawnNewConnection();
+        }
 
         if (leastBusy == null) {
             // We could have raced with a shutdown since the last check
@@ -136,12 +140,14 @@ class HostConnectionPool {
             // This might maybe happen if the number of core connections per host is 0 and a connection was trashed between
             // the previous check to connections and now. But in that case, the line above will have trigger the creation of
             // a new connection, so just wait that connection and move on
+	        logger.debug("Waiting connection. Not able to find least busy");
             leastBusy = waitForConnection(timeout, unit);
         } else {
             while (true) {
                 int inFlight = leastBusy.inFlight.get();
 
                 if (inFlight >= leastBusy.maxAvailableStreams()) {
+	                logger.debug("Waiting for conn inFlight:{} >= streams:{}", inFlight, leastBusy.maxAvailableStreams());
                     leastBusy = waitForConnection(timeout, unit);
                     break;
                 }
@@ -150,6 +156,7 @@ class HostConnectionPool {
                     break;
             }
         }
+	    logger.debug("Got least busy connection: {}", leastBusy);
         leastBusy.setKeyspace(manager.poolsState.keyspace);
         return leastBusy;
     }
@@ -222,8 +229,10 @@ class HostConnectionPool {
                 while (true) {
                     int inFlight = leastBusy.inFlight.get();
 
-                    if (inFlight >= leastBusy.maxAvailableStreams())
-                        break;
+                    if (inFlight >= leastBusy.maxAvailableStreams()) {
+	                    logger.debug("Connection has no streams available {}", leastBusy);
+	                    break;
+                    }
 
                     if (leastBusy.inFlight.compareAndSet(inFlight, inFlight + 1))
                         return leastBusy;
@@ -233,10 +242,14 @@ class HostConnectionPool {
             remaining = timeout - Cluster.timeSince(start, unit);
         } while (remaining > 0);
 
+	    logger.debug("Unable to get connection in {}ms", timeout);
+
         throw new TimeoutException();
     }
 
     public void returnConnection(PooledConnection connection) {
+	    logger.debug("Return connection {}", connection);
+
         if (isClosed()) {
             close(connection);
             return;
@@ -255,8 +268,10 @@ class HostConnectionPool {
             }
 
             if (connections.size() > options().getCoreConnectionsPerHost(hostDistance) && inFlight <= options().getMinSimultaneousRequestsPerConnectionThreshold(hostDistance)) {
+	            logger.debug("Trashing connection {} | connections size: {}", connection, connections.size());
                 trashConnection(connection);
             } else if (connection.maxAvailableStreams() < MIN_AVAILABLE_STREAMS) {
+	            logger.debug("Replacing connection {} | streams {} < {} ", connection, connection.maxAvailableStreams(), MIN_AVAILABLE_STREAMS);
                 replaceConnection(connection);
             } else {
                 signalAvailableConnection();
@@ -288,6 +303,8 @@ class HostConnectionPool {
     }
 
     private void doTrashConnection(PooledConnection connection) {
+	    logger.debug("Do Trash Connection {}", connection);
+
         trash.add(connection);
         connections.remove(connection);
 
@@ -314,7 +331,9 @@ class HostConnectionPool {
 
         // Now really open the connection
         try {
-            connections.add(manager.connectionFactory().open(this));
+	        PooledConnection openedConnection = manager.connectionFactory().open(this);
+	        logger.debug("Opened connection {}", openedConnection);
+	        connections.add(openedConnection);
             signalAvailableConnection();
             return true;
         } catch (InterruptedException e) {
@@ -432,4 +451,13 @@ class HostConnectionPool {
             this.keyspace = keyspace;
         }
     }
+
+	private void dumpConnections() {
+		StringBuilder s = new StringBuilder();
+		for (PooledConnection conn : connections) {
+			s.append(conn).append("\n");
+		}
+
+		logger.debug("CONNECTIONS {}\n{}", host, s.toString());
+	}
 }

@@ -211,10 +211,11 @@ public class Stress {
 
         PoolingOptions pools = new PoolingOptions();
         pools.setMaxSimultaneousRequestsPerConnectionThreshold(HostDistance.LOCAL, concurrency);
-        pools.setCoreConnectionsPerHost(HostDistance.LOCAL, maxConnections);
-        pools.setMaxConnectionsPerHost(HostDistance.LOCAL, maxConnections);
-        pools.setCoreConnectionsPerHost(HostDistance.REMOTE, maxConnections);
-        pools.setMaxConnectionsPerHost(HostDistance.REMOTE, maxConnections);
+
+	    pools.setCoreConnectionsPerHost(HostDistance.LOCAL, 2);
+        pools.setMaxConnectionsPerHost(HostDistance.LOCAL, 8);
+//        pools.setCoreConnectionsPerHost(HostDistance.REMOTE, maxConnections);
+//        pools.setMaxConnectionsPerHost(HostDistance.REMOTE, maxConnections);
 
         System.out.println("Initializing stress test:");
         System.out.println("  request count:        " + (requests == -1 ? "unlimited" : requests));
@@ -223,12 +224,18 @@ public class Stress {
         System.out.println("  per-host connections: " + maxConnections);
         System.out.println("  compression:          " + options.has("compression"));
 
+	    System.out.println(System.getProperties());
+
         try {
             // Create session to hosts
-            Cluster cluster = new Cluster.Builder()
+	        SocketOptions options1 = new SocketOptions()
+//			        .setTcpNoDelay(true)
+//			        .setConnectTimeoutMillis(100)
+			        ;
+	        Cluster cluster = new Cluster.Builder()
                                          .addContactPoints(String.valueOf(options.valueOf("ip")))
                                          .withPoolingOptions(pools)
-                                         .withSocketOptions(new SocketOptions().setTcpNoDelay(true))
+                                         .withSocketOptions(options1)
                                          .build();
 
             if (options.has("compression"))
